@@ -51,7 +51,7 @@ class NewsCollector:
             await self._client.aclose()
 
     async def collect(self, feed_urls: Iterable[str]) -> list[NewsArticle]:
-        """Fetch RSS feeds concurrently and return de-duplicated articles."""
+        """Fetch RSS feeds concurrently and return normalized article metadata."""
 
         urls = list(feed_urls)
         if not urls:
@@ -62,18 +62,17 @@ class NewsCollector:
             *(self._collect_feed(url) for url in urls),
             return_exceptions=True,
         )
-        articles: dict[str, NewsArticle] = {}
+        articles: list[NewsArticle] = []
 
         for result in results:
             if isinstance(result, BaseException):
                 LOGGER.exception("RSS feed collection failed.", exc_info=result)
                 continue
-            for article in result:
-                articles.setdefault(article.id, article)
+            articles.extend(result)
 
-        LOGGER.info("Collected %d unique articles.", len(articles))
+        LOGGER.info("Collected %d articles.", len(articles))
         return sorted(
-            articles.values(),
+            articles,
             key=lambda item: item.published_at or item.collected_at,
             reverse=True,
         )
@@ -114,7 +113,9 @@ class NewsCollector:
                     exc,
                 )
                 if attempt < self._max_retries:
-                    await asyncio.sleep(self._retry_backoff_seconds * attempt)
+                    await asyncio.sleep(
+                        self._retry_backoff_seconds * (2 ** (attempt - 1))
+                    )
 
         raise RuntimeError(
             f"Failed to fetch RSS feed after retries: {feed_url}"

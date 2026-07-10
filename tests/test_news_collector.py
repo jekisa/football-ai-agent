@@ -91,8 +91,8 @@ async def test_collect_retries_failed_request() -> None:
 
 
 @pytest.mark.asyncio
-async def test_collect_deduplicates_articles_by_url() -> None:
-    """Repeated links across feeds are emitted once."""
+async def test_collect_keeps_duplicate_rss_metadata() -> None:
+    """Repeated links across feeds are preserved for downstream modules."""
 
     async def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(200, content=RSS_FEED, request=request)
@@ -111,4 +111,53 @@ async def test_collect_deduplicates_articles_by_url() -> None:
             ["https://example.com/a.xml", "https://example.com/b.xml"]
         )
 
+    assert len(articles) == 2
+
+
+@pytest.mark.asyncio
+async def test_collect_rejects_empty_feed_urls() -> None:
+    """At least one RSS feed URL is required."""
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, content=RSS_FEED, request=request)
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        collector = NewsCollector(
+            timeout_seconds=1,
+            max_retries=1,
+            retry_backoff_seconds=0,
+            user_agent="test",
+            client=client,
+        )
+
+        with pytest.raises(ValueError, match="At least one RSS feed URL is required"):
+            await collector.collect([])
+
+
+@pytest.mark.asyncio
+async def test_collect_retries_timeout() -> None:
+    """Timeouts are retried before a successful response is parsed."""
+
+    calls = 0
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            raise httpx.TimeoutException("timed out", request=request)
+        return httpx.Response(200, content=RSS_FEED, request=request)
+
+    transport = httpx.MockTransport(handler)
+    async with httpx.AsyncClient(transport=transport) as client:
+        collector = NewsCollector(
+            timeout_seconds=1,
+            max_retries=2,
+            retry_backoff_seconds=0,
+            user_agent="test",
+            client=client,
+        )
+
+        articles = await collector.collect(["https://example.com/feed.xml"])
+
+    assert calls == 2
     assert len(articles) == 1

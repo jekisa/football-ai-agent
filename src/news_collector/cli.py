@@ -3,20 +3,39 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
+from datetime import UTC, datetime
+from typing import Any
 
 from news_collector.collector import NewsCollector
 from news_collector.config import NewsCollectorSettings
-from news_collector.storage import PostgresNewsStore, write_news_json
+from news_collector.storage import write_news_json
+
+
+class JsonLogFormatter(logging.Formatter):
+    """Format log records as JSON for container-friendly structured logging."""
+
+    def format(self, record: logging.LogRecord) -> str:
+        """Return a JSON log line."""
+
+        payload: dict[str, Any] = {
+            "timestamp": datetime.fromtimestamp(record.created, UTC).isoformat(),
+            "level": record.levelname,
+            "logger": record.name,
+            "message": record.getMessage(),
+        }
+        if record.exc_info:
+            payload["exception"] = self.formatException(record.exc_info)
+        return json.dumps(payload, ensure_ascii=False)
 
 
 def configure_logging() -> None:
-    """Configure structured-enough logging for containers and local runs."""
+    """Configure structured logging for containers and local runs."""
 
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s %(levelname)s %(name)s - %(message)s",
-    )
+    handler = logging.StreamHandler()
+    handler.setFormatter(JsonLogFormatter())
+    logging.basicConfig(level=logging.INFO, handlers=[handler], force=True)
 
 
 async def run() -> None:
@@ -32,9 +51,6 @@ async def run() -> None:
         articles = await collector.collect(settings.rss_feed_urls)
 
     await write_news_json(settings.output_path, articles)
-
-    if settings.database_url:
-        await PostgresNewsStore(settings.database_url).upsert_articles(articles)
 
 
 def main() -> None:

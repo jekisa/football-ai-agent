@@ -25,7 +25,6 @@ class NewsCollectorSettings(BaseSettings):
         alias="NEWS_RETRY_BACKOFF_SECONDS",
     )
     user_agent: str = Field(default="football-ai-agent/0.1", alias="NEWS_USER_AGENT")
-    database_url: str | None = Field(default=None, alias="DATABASE_URL")
 
     @property
     def rss_feed_urls(self) -> list[str]:
