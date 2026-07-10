@@ -57,7 +57,7 @@ async def test_collect_returns_normalized_articles() -> None:
     assert len(articles) == 1
     assert articles[0].title == "Indonesia wins dramatic match"
     assert str(articles[0].url) == "https://example.com/news/indonesia-win"
-    assert str(articles[0].source_feed_url) == "https://example.com/feed.xml"
+    assert articles[0].source == "https://example.com/feed.xml"
     assert articles[0].published_at is not None
 
 
